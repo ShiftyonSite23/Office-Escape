@@ -1,64 +1,516 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Office Escape</title>
-  <style>
-    body {
-      margin: 0;
-      background: #111;
-      color: #fff;
-      font-family: Arial, sans-serif;
-      text-align: center;
-    }
-    canvas {
-      display: block;
-      margin: 20px auto;
-      background: #000;
-      border: 2px solid #555;
-    }
-    #debug {
-      font-size: 14px;
-      margin-top: 10px;
-      color: #aaa;
-    }
-  </style>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
+<title>Office Escape — Isometric Maze (Feature Merge)</title>
+<style>
+  :root{
+    --bg:#0f1a27; --tileA:#102133; --tileB:#0c1a2a; --ink:#0ef;
+    --wall:#cfd6df; --wallEdge:#9fb0c2; --desk:#a5682a; --plant:#2ecc71;
+    --hero:#f7f2e8; --tie:#e74c3c; --shadow:#00000055; --paper:#e7eef7;
+    --copier:#8ec6ff; --acc:#ff5252; --btn:#1c2736; --btnHi:#243348;
+  }
+  html,body{height:100%;margin:0;background:#0b1420;color:#e8eef5;font-family:system-ui,Segoe UI,Roboto,Arial;}
+  #wrap{max-width:900px;margin:0 auto;padding:8px 8px 96px;}
+  h1{font-size:18px;margin:8px 0 6px;text-align:center;letter-spacing:.5px}
+  #hud{display:flex;gap:16px;justify-content:center;font-weight:700}
+  #dbg{position:fixed;left:6px;top:6px;background:#0008;color:#9ff;
+       padding:6px 8px;border-radius:6px;font:12px/1.3 ui-monospace,monospace;display:none}
+  #cv{width:100%;height:auto;background:#0b1522;border-radius:12px;display:block}
+  /* touch controls */
+  #touch{position:fixed;left:0;right:0;bottom:0;padding:10px 10px 14px;
+         background:linear-gradient(180deg,transparent 0,#0008 30%,#000a 100%);
+         display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end}
+  .pad{display:flex;gap:10px;align-items:end}
+  .dpad{display:grid;grid-template-columns:repeat(3,72px);grid-template-rows:repeat(2,72px);
+        gap:10px;justify-content:center}
+  .key{width:72px;height:72px;background:var(--btn);border:2px solid #314358;
+       border-radius:16px;color:#cfe6ff;display:flex;align-items:center;justify-content:center;
+       font-size:24px;user-select:none;touch-action:none}
+  .key:active{background:var(--btnHi)}
+  .big{width:120px;height:120px;border-radius:24px;font-size:28px}
+  /* overlays */
+  .centerOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#000a}
+  .panel{background:#0e1b2a; border:2px solid #30455e; padding:18px 20px; border-radius:14px; text-align:center; color:#dfe9f6}
+  .panel h2{margin:0 0 8px}
+  .panel button{background:#1b2a3f;color:#dfe9f6;border:2px solid #324b67;border-radius:10px;padding:10px 16px;font-weight:700}
+  .panel button:active{transform:translateY(1px)}
+</style>
 </head>
 <body>
-  <h1>Office Escape</h1>
-  <canvas id="game" width="640" height="480"></canvas>
-  <div id="debug">Loading...</div>
+<div id="wrap">
+  <h1>Office Escape — Isometric Maze</h1>
+  <div id="hud">Coffee: <span id="coffee">0</span> • HP: <span id="hp">12</span></div>
+  <canvas id="cv" width="820" height="560"></canvas>
+</div>
 
-  <script>
-    // === SIMPLE PLACEHOLDER GAME LOOP ===
-    // Replace this section with your full game code later
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    const debug = document.getElementById("debug");
+<div id="touch">
+  <div class="pad">
+    <div class="dpad">
+      <div></div><div class="key" data-k="up">↑</div><div></div>
+      <div class="key" data-k="left">←</div>
+      <div class="key" data-k="down">↓</div>
+      <div class="key" data-k="right">→</div>
+    </div>
+  </div>
+  <div class="pad" style="justify-content:flex-end">
+    <div class="key big" data-k="attack">⚔</div>
+  </div>
+</div>
 
-    let player = { x: 300, y: 220, size: 20 };
+<div id="menu" class="centerOverlay" style="display:flex">
+  <div class="panel">
+    <h2>Office Escape</h2>
+    <p>Find the elevator. Avoid (or defeat) office hazards.</p>
+    <button id="startBtn">Start</button>
+    <div style="margin-top:8px">
+      <label style="font:12px ui-monospace;color:#9ff"><input id="toggleDbg" type="checkbox"/> debug</label>
+    </div>
+  </div>
+</div>
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "lime";
-      ctx.fillRect(player.x, player.y, player.size, player.size);
-      debug.innerText = `Player at: (${player.x}, ${player.y})`;
+<div id="gameOver" class="centerOverlay">
+  <div class="panel">
+    <h2>You were <span style="color:#ff6">FIRED</span>!</h2>
+    <p>Tip: Coffee heals +2. Five coffees = 5s invincible rush.</p>
+    <button id="retryBtn">Try Again</button>
+  </div>
+</div>
+
+<div id="win" class="centerOverlay">
+  <div class="panel">
+    <h2>Level Complete!</h2>
+    <p>Congrats—elevator reached.</p>
+    <button id="againBtn">Play Again</button>
+  </div>
+</div>
+
+<pre id="dbg">boot…</pre>
+
+<script>
+(() => {
+const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+const ui = {
+  coffee: document.getElementById('coffee'),
+  hp: document.getElementById('hp'),
+  menu: document.getElementById('menu'),
+  over: document.getElementById('gameOver'),
+  win: document.getElementById('win'),
+  dbg: document.getElementById('dbg'),
+  startBtn: document.getElementById('startBtn'),
+  retryBtn: document.getElementById('retryBtn'),
+  againBtn: document.getElementById('againBtn'),
+  toggleDbg: document.getElementById('toggleDbg'),
+};
+let showDbg = false;
+ui.toggleDbg.onchange = () => { showDbg = ui.toggleDbg.checked; ui.dbg.style.display = showDbg ? 'block' : 'none'; };
+const touchState = {left:false,right:false,up:false,down:false,attack:false};
+for (const el of document.querySelectorAll('.key')) {
+  const k = el.dataset.k;
+  const set = v => (touchState[k]=v);
+  const start = e => { e.preventDefault(); set(true); };
+  const end   = e => { e.preventDefault(); set(false); };
+  el.addEventListener('touchstart',start,{passive:false});
+  el.addEventListener('touchend',end,{passive:false});
+  el.addEventListener('mousedown',start);
+  el.addEventListener('mouseup',end);
+  el.addEventListener('mouseleave',end);
+}
+const keys = {};
+addEventListener('keydown',e=>{keys[e.key]=true;});
+addEventListener('keyup',e=>{keys[e.key]=false;});
+
+const T = 28;               // grid tile size (screen diagonal pitch)
+const MAPW = 44, MAPH = 28; // logical grid
+const center = { x: cv.width/2, y: 140 }; // camera anchor
+
+// helpers
+const lerp=(a,b,t)=>a+(b-a)*t;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd=(a,b)=>a+Math.random()*(b-a)|0;
+
+function isoToScreen(ix,iy, iz=0){
+  const x = (ix - iy) * T + center.x;
+  const y = (ix + iy) * T*0.5 + center.y - iz;
+  return {x,y};
+}
+function drawIsoTile(ix,iy,color,edgeColor){
+  const p=isoToScreen(ix,iy);
+  cx.beginPath();
+  cx.moveTo(p.x, p.y);
+  cx.lineTo(p.x+T, p.y+T*0.5);
+  cx.lineTo(p.x,   p.y+T);
+  cx.lineTo(p.x-T, p.y+T*0.5);
+  cx.closePath();
+  cx.fillStyle=color; cx.fill();
+  if(edgeColor){ cx.strokeStyle=edgeColor; cx.lineWidth=1; cx.stroke(); }
+}
+
+function drawFloor(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  // subtle isometric floor diamonds
+  for(let y=-2;y<MAPH+6;y++){
+    for(let x=-2;x<MAPW+6;x++){
+      const c = ((x+y)&1)?'var(--tileA)':'var(--tileB)';
+      drawIsoTile(x,y,c);
+    }
+  }
+}
+
+// map generation: open-cubicle maze (clean)
+const walls = new Set(); // "x,y" -> solid partition
+const desks = [];
+const plants= [];
+const pickups = []; // {x,y,type:'coffee'|'pencil'|'ruler'}
+const elevator = {x: MAPW-5, y: 3, open:true, anim:0};
+
+function keyXY(x,y){ return x+','+y; }
+function addWallRect(x,y,w,h, gapsEvery=3){
+  for(let j=0;j<h;j++){
+    for(let i=0;i<w;i++){
+      // leave regular gaps for clean maze paths
+      if ((i%gapsEvery===0 && j%2===0)) continue;
+      walls.add(keyXY(x+i,y+j));
+    }
+  }
+}
+
+function buildMap(){
+  walls.clear(); desks.length=plants.length=pickups.length=0;
+
+  // perimeter
+  addWallRect(0,0,MAPW,1,99);
+  addWallRect(0,MAPH-1,MAPW,1,99);
+  addWallRect(0,0,1,MAPH,99);
+  addWallRect(MAPW-1,0,1,MAPH,99);
+
+  // flowing diagonals with consistent gaps
+  for(let r=4;r<MAPH-6;r+=5){
+    const start = (r%10===0)? 6 : 3;
+    addWallRect(start, r, MAPW-start-4, 1, 4);
+  }
+
+  // vertical slices for maze feel
+  for(let c=6;c<MAPW-6;c+=6){
+    addWallRect(c, 3, 1, MAPH-8, 4);
+  }
+
+  // desks and plants (non-solid deco)
+  for(let i=0;i<10;i++)
+    desks.push({x:rnd(4,MAPW-6), y:rnd(5,MAPH-6)});
+  for(let i=0;i<8;i++)
+    plants.push({x:rnd(3,MAPW-4), y:rnd(4,MAPH-5)});
+
+  // pickups
+  for(let i=0;i<7;i++) pickups.push({x:rnd(3,MAPW-4),y:rnd(4,MAPH-6),type:'coffee',taken:false});
+  pickups.push({x:rnd(4,MAPW-8),y:rnd(6,MAPH-8),type:'pencil',taken:false});
+  pickups.push({x:rnd(6,MAPW-10),y:rnd(6,MAPH-10),type:'ruler',taken:false});
+
+  // ensure elevator area open
+  for(let dx=-1;dx<=1;dx++) walls.delete(keyXY(elevator.x+dx,elevator.y));
+}
+
+function drawDeco(){
+  // walls
+  walls.forEach(k=>{
+    const [x,y]=k.split(',').map(Number);
+    drawIsoTile(x,y,'var(--wall)','var(--wallEdge)');
+  });
+  // desks
+  for(const d of desks){
+    const p = isoToScreen(d.x,d.y);
+    cx.fillStyle='var(--desk)';
+    cx.fillRect(p.x-12,p.y+10,24,8);
+    cx.fillRect(p.x-10,p.y+18,6,8);
+    cx.fillRect(p.x+4,p.y+18,6,8);
+  }
+  // plants
+  for(const pnt of plants){
+    const p = isoToScreen(pnt.x,pnt.y);
+    cx.fillStyle='var(--plant)'; cx.beginPath();
+    cx.arc(p.x, p.y+14, 8, 0, Math.PI*2); cx.fill();
+    cx.fillStyle='#3a2'; cx.fillRect(p.x-2,p.y+14,4,8);
+  }
+  // elevator
+  const e = isoToScreen(elevator.x,elevator.y);
+  const t = 6 + Math.sin(elevator.anim)*2;
+  cx.fillStyle = elevator.open ? '#bfeaff' : '#6aa9ff';
+  cx.fillRect(e.x-14, e.y+10, 28, 18);
+  cx.fillStyle = '#8fd3ff'; cx.fillRect(e.x-12, e.y+12, 24, 14);
+  if(!elevator.open){
+    cx.fillStyle='#3b6fa8';
+    cx.fillRect(e.x-12, e.y+12, 11, 14);
+    cx.fillRect(e.x+1,  e.y+12, 11, 14);
+  } else {
+    // open shimmer
+    cx.strokeStyle='#fff8'; cx.lineWidth=1;
+    cx.strokeRect(e.x-12, e.y+12, 24, 14);
+  }
+  elevator.anim += 0.06;
+
+  // pickups
+  for(const it of pickups){
+    if(it.taken) continue;
+    const p = isoToScreen(it.x,it.y);
+    if(it.type==='coffee'){
+      cx.fillStyle='#8B4513'; cx.fillRect(p.x-5,p.y+12,10,10);
+      cx.fillStyle='#c44'; cx.fillRect(p.x-2,p.y+10,4,4);
+    } else if(it.type==='pencil'){
+      cx.fillStyle='#f7d774'; cx.fillRect(p.x-10,p.y+16,20,4);
+      cx.fillStyle='#333'; cx.fillRect(p.x+8,p.y+16,2,4);
+      cx.fillStyle='#f8b0b0'; cx.fillRect(p.x-10,p.y+16,3,4);
+    } else if(it.type==='ruler'){
+      cx.fillStyle='#66c9a5'; cx.fillRect(p.x-12,p.y+14,24,6);
+      cx.fillStyle='#2b6'; for(let i=-10;i<=10;i+=4) cx.fillRect(p.x+i,p.y+14,1,6);
+    }
+  }
+}
+
+// entities
+const player = {
+  x:3,y:MAPH-6, hp:12, coffee:0, weap:'none', inv:0, speed:0.08, facing:1, atkCD:0
+};
+
+function drawPlayer(){
+  const p=isoToScreen(player.x,player.y);
+  cx.fillStyle='var(--shadow)'; cx.beginPath(); cx.ellipse(p.x,p.y+20,12,6,0,0,Math.PI*2); cx.fill();
+  // caffeine rush effect
+  if(player.inv>0){ cx.save(); cx.globalAlpha=0.25; cx.fillStyle='#fff';
+    for(let i=0;i<3;i++){ cx.fillRect(p.x-6-i*3,p.y+2-i*2,12,16); }
+    cx.restore();
+  }
+  // body
+  cx.fillStyle='var(--hero)'; cx.fillRect(p.x-6,p.y,12,16);
+  cx.fillStyle='var(--tie)'; cx.fillRect(p.x-1,p.y+2,2,7);
+  // head
+  cx.fillStyle='#e7d5c4'; cx.fillRect(p.x-6,p.y-10,12,10);
+  // facing marker
+  cx.fillStyle= player.weap==='ruler' ? '#66c9a5' : player.weap==='pencil' ? '#f7d774' : '#9fb0c2';
+  cx.fillRect(p.x+(player.facing>0?6:-8), p.y+4, 2,6);
+}
+
+function canMove(nx,ny){
+  const k = keyXY(Math.round(nx),Math.round(ny));
+  return !walls.has(k);
+}
+
+function distance(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+// enemies
+const mobs = []; // {type:'worker'|'chair'|'copier', x,y, hp, dir, t, ...}
+function spawn(){
+  mobs.length=0;
+  // workers patrol on corridors
+  for(let i=0;i<6;i++){
+    const w={type:'worker', x:rnd(5,MAPW-6), y:rnd(4,MAPH-7), hp:3, dir: (Math.random()<.5?1:-1), t:0};
+    if(canMove(w.x,w.y)) mobs.push(w);
+  }
+  // chairs (short dash)
+  for(let i=0;i<4;i++){
+    const c={type:'chair', x:rnd(6,MAPW-8), y:rnd(4,MAPH-8), hp:2, t:0, vx:0, vy:0};
+    if(canMove(c.x,c.y)) mobs.push(c);
+  }
+  // copiers
+  for(let i=0;i<3;i++){
+    const cp={type:'copier', x:rnd(7,MAPW-9), y:rnd(5,MAPH-10), hp:4, t:0, cool:0};
+    if(canMove(cp.x,cp.y)) mobs.push(cp);
+  }
+}
+const bullets=[]; // paper from copiers
+function tryShoot(m){
+  if(m.cool>0){ m.cool--; return; }
+  const d = distance(m,player);
+  if(d<10){
+    // line of sight sample (simple: step along vector; stop if wall)
+    let sx=m.x, sy=m.y, hitWall=false;
+    const steps=20, dx=(player.x-m.x)/steps, dy=(player.y-m.y)/steps;
+    for(let i=0;i<steps;i++){
+      sx+=dx; sy+=dy;
+      if(walls.has(keyXY(Math.round(sx),Math.round(sy)))){ hitWall=true; break; }
+    }
+    if(!hitWall){
+      bullets.push({x:m.x, y:m.y, vx:dx*0.6, vy:dy*0.6, life:90});
+      m.cool=50;
+    }
+  }
+}
+function updateBullets(){
+  for(const b of bullets){
+    const nx=b.x+b.vx, ny=b.y+b.vy;
+    if(!canMove(nx,ny)) { b.life=0; continue; }
+    b.x=nx; b.y=ny; b.life--;
+    if(distance(b,player)<0.7 && player.inv<=0){
+      player.hp = Math.max(0, player.hp-1);
+      b.life=0;
+    }
+  }
+  for(let i=bullets.length-1;i>=0;i--) if(bullets[i].life<=0) bullets.splice(i,1);
+}
+function drawBullets(){
+  for(const b of bullets){
+    const p=isoToScreen(b.x,b.y);
+    cx.fillStyle='var(--paper)'; cx.fillRect(p.x-3,p.y+12,6,4);
+  }
+}
+
+function updateMobs(dt){
+  for(const m of mobs){
+    m.t+=dt;
+    if(m.type==='worker'){
+      // follow corridor; if blocked, flip
+      const step = 0.045 * (player.inv>0?1.2:1);
+      const nx = m.x + step * m.dir;
+      if(canMove(nx,m.y)) m.x = nx; else m.dir*=-1;
+      // bump player
+      if(distance(m,player)<0.8 && player.inv<=0) player.hp = Math.max(0,player.hp-1);
+    } else if(m.type==='chair'){
+      // “dash, rest” loop
+      if((m.t|0)%120<20){
+        const dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
+        const sp = 0.10; m.vx = dx*sp; m.vy = dy*sp;
+      } else { m.vx*=0.9; m.vy*=0.9; }
+      const nx=m.x+m.vx, ny=m.y+m.vy;
+      if(canMove(nx,ny)){ m.x=nx; m.y=ny; } else { m.vx= -m.vx*0.5; m.vy= -m.vy*0.5; }
+      if(distance(m,player)<0.8 && player.inv<=0) player.hp = Math.max(0,player.hp-1);
+    } else if(m.type==='copier'){
+      tryShoot(m);
+    }
+  }
+  // clean dead mobs
+  for(let i=mobs.length-1;i>=0;i--) if(mobs[i].hp<=0) mobs.splice(i,1);
+}
+function drawMobs(){
+  for(const m of mobs){
+    const p=isoToScreen(m.x,m.y);
+    if(m.type==='worker'){
+      cx.fillStyle='#ffd580'; cx.fillRect(p.x-6,p.y-8,12,8); // head
+      cx.fillStyle='#cfe4ff'; cx.fillRect(p.x-7,p.y,14,16); // shirt
+      cx.fillStyle='#e33'; cx.fillRect(p.x-1,p.y+2,2,7);
+    } else if(m.type==='chair'){
+      cx.fillStyle='#d58a2a'; cx.fillRect(p.x-10,p.y+10,20,8);
+      cx.fillStyle='#8a5315'; cx.fillRect(p.x-8,p.y+18,6,8);
+      cx.fillRect(p.x+2,p.y+18,6,8);
+    } else if(m.type==='copier'){
+      // body
+      cx.fillStyle='var(--copier)'; cx.fillRect(p.x-14,p.y+6,28,16);
+      cx.fillStyle='#fff'; cx.fillRect(p.x-10,p.y+8,10,6);
+      // jam light
+      cx.fillStyle='var(--acc)'; cx.beginPath(); cx.arc(p.x+10,p.y+6,4,0,Math.PI*2); cx.fill();
+    }
+  }
+}
+
+// combat
+function tryAttack(){
+  if(player.atkCD>0) return;
+  player.atkCD=18;
+  const range = player.weap==='ruler' ? 1.6 : 1.0;
+  const arc = player.weap==='ruler' ? Math.PI*0.70 : Math.PI*0.45;
+  const dir = Math.atan2(0, player.facing); // 0 or π, but we’ll treat left/right only
+  for(const m of mobs){
+    const d=distance(player,m);
+    if(d<=range){
+      // simple angle filter in isometric (use x delta sign)
+      const facingOK = (player.facing>0 && m.x>player.x-0.1) || (player.facing<0 && m.x<player.x+0.1);
+      if(facingOK){ m.hp -= (player.weap==='ruler'?2:1); }
+    }
+  }
+}
+function drawAttackFx(){
+  if(player.atkCD>10){
+    const p=isoToScreen(player.x,player.y);
+    cx.strokeStyle = player.weap==='ruler' ? '#7ef7c8' : '#ffe07a';
+    cx.lineWidth = player.weap==='ruler' ? 5 : 3;
+    cx.beginPath();
+    const s = player.weap==='ruler' ? 22 : 16;
+    if(player.facing>0){ cx.moveTo(p.x, p.y+10); cx.lineTo(p.x+s, p.y+6); }
+    else { cx.moveTo(p.x, p.y+10); cx.lineTo(p.x-s, p.y+6); }
+    cx.stroke();
+  }
+}
+
+// game flow
+function resetGame(){
+  player.x=3; player.y=MAPH-6; player.hp=12; player.coffee=0; player.weap='none'; player.inv=0;
+  buildMap(); spawn(); bullets.length=0;
+  ui.coffee.textContent=player.coffee; ui.hp.textContent=player.hp;
+}
+
+ui.startBtn.onclick = () => { ui.menu.style.display='none'; resetGame(); playing=true; };
+ui.retryBtn.onclick = () => { ui.over.style.display='none'; ui.menu.style.display='flex'; };
+ui.againBtn.onclick = () => { ui.win.style.display='none'; ui.menu.style.display='flex'; };
+
+let playing=false, rafId=0, last=0;
+function loop(ts){
+  rafId=requestAnimationFrame(loop);
+  const dt = Math.min(1, (ts-last)/16.666); last=ts;
+
+  drawFloor();
+  drawDeco();
+
+  if(playing){
+    // input
+    const left = keys['ArrowLeft']||keys['a']||touchState.left;
+    const right= keys['ArrowRight']||keys['d']||touchState.right;
+    const up   = keys['ArrowUp']||keys['w']||touchState.up;
+    const down = keys['ArrowDown']||keys['s']||touchState.down;
+    const atk  = keys[' ']||touchState.attack;
+
+    let vx=0, vy=0, sp = player.speed*(player.inv>0?1.35:1);
+    if(left)  { vx-=sp; player.facing=-1; }
+    if(right) { vx+=sp; player.facing=1; }
+    if(up)    { vy-=sp*0.7; }
+    if(down)  { vy+=sp*0.7; }
+
+    const nx = player.x + vx, ny = player.y + vy;
+    if(canMove(nx,player.y)) player.x=nx;
+    if(canMove(player.x,ny)) player.y=ny;
+
+    if(atk) tryAttack();
+    if(player.atkCD>0) player.atkCD--;
+
+    // pickups
+    for(const it of pickups){
+      if(it.taken) continue;
+      if(Math.hypot(player.x-it.x, player.y-it.y)<0.8){
+        it.taken = true;
+        if(it.type==='coffee'){
+          player.coffee++; player.hp=Math.min(20, player.hp+2);
+          if(player.coffee%5===0) player.inv=300; // ~5s
+          ui.coffee.textContent=player.coffee; ui.hp.textContent=player.hp;
+        } else if(it.type==='pencil'){ player.weap='pencil'; }
+        else if(it.type==='ruler'){ player.weap='ruler'; }
+      }
     }
 
-    function update() {
-      draw();
-      requestAnimationFrame(update);
+    // elevator win
+    if(distance(player,elevator)<1.0){
+      playing=false; ui.win.style.display='flex';
     }
-    update();
 
-    // Arrow key controls
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowUp") player.y -= 10;
-      if (e.key === "ArrowDown") player.y += 10;
-      if (e.key === "ArrowLeft") player.x -= 10;
-      if (e.key === "ArrowRight") player.x += 10;
-    });
-  </script>
-</body>
-</html>
+    // enemies & bullets
+    updateMobs(1); updateBullets();
+
+    // damage tick-down
+    if(player.inv>0) player.inv--;
+
+    // death
+    if(player.hp<=0){ playing=false; ui.over.style.display='flex'; }
+
+    // HUD
+    ui.hp.textContent=player.hp;
+  }
+
+  drawMobs();
+  drawBullets();
+  drawPlayer();
+  drawAttackFx();
+
+  if(showDbg){
+    ui.dbg.textContent = `OK fps:60 pos: (${Math.round(player.x)},${Math.round(player.y)}) coffee:${player.coffee} hp:${player.hp}\n`+
+      `input: ${JSON.stringify(touchState)}`;
+  }
+}
+cancelAnimationFrame(rafId); requestAnimationFrame(loop);
+})();
+</script>
+</body></html>
