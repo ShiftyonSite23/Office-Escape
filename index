@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>Office Escape — Fresh Start (Isometric)</title>
+<title>Office Escape — Minimal (Map + Player)</title>
 <style>
   :root{
     --bg:#0c1220; --ink:#e7eefc; --muted:#91a1c6;
-    --tile:#112036; --tile2:#0e1a2e; --wall:#d3d9e6; --shadow:#00000055;
-    --enemy:#ff6b6b; --player:#6be0ff; --accent:#58ffa8;
+    --tileA:#0f2034; --tileB:#0c1a2e; --wall:#d5deee; --shadow:#00000055;
+    --player:#6be0ff; --accent:#58ffa8;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -17,12 +17,11 @@
     font:600 16px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
     display:flex; flex-direction:column; align-items:center; gap:8px;
   }
-  header{margin:8px 0 0 0}
+  header{margin:8px 0 0}
   #wrap{
     position:relative; width:100vw; max-width:1100px; aspect-ratio:16/10;
     background:linear-gradient(180deg,#0c1425 0%, #0b1322 100%);
     border:1px solid #22314d; border-radius:14px; overflow:hidden;
-    box-shadow:0 10px 40px #0008 inset;
   }
   canvas{width:100%; height:100%; display:block}
   .hud{
@@ -30,9 +29,9 @@
     background:#0b1322d0; border:1px solid #22314d; border-radius:10px;
     font-weight:700; color:var(--muted);
   }
-  /* Touch controls */
-  .pads{position:relative; width:100%; max-width:1100px; padding:10px 14px 16px}
-  .row{display:flex; justify-content:space-between; gap:14px}
+  /* Touch controls (hold to move) */
+  .pads{width:100%; max-width:1100px; padding:10px 14px 16px}
+  .row{display:flex; justify-content:center}
   .dpad{
     display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,64px);
     gap:10px; touch-action:none;
@@ -43,121 +42,97 @@
     display:flex; align-items:center; justify-content:center; color:#cfe1ff;
     font-size:22px; user-select:none; -webkit-user-select:none;
   }
-  .btn.wide{width:120px}
   .btn:active{filter:brightness(1.2)}
-  .ghost{opacity:.4}
   @media (max-width: 540px){
-    .btn{width:56px;height:56px} .btn.wide{width:100px}
+    .btn{width:56px;height:56px}
     .dpad{grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px)}
   }
 </style>
 </head>
 <body>
-<header>Office Escape — <span style="color:var(--accent)">Fresh Start</span></header>
+<header>Office Escape — <span style="color:var(--accent)">Minimal Build</span></header>
 <div id="wrap">
   <canvas id="game" width="1280" height="800"></canvas>
   <div class="hud" id="debug">boot…</div>
 </div>
 
-<!-- TOUCH CONTROLS -->
+<!-- TOUCH DPAD -->
 <div class="pads">
-  <div class="row" style="justify-content:center;gap:24px">
+  <div class="row">
     <div class="dpad" id="dpad">
       <div></div>          <div class="btn" data-key="ArrowUp">↑</div>      <div></div>
-      <div class="btn" data-key="ArrowLeft">←</div>
-      <div class="btn ghost">•</div>
-      <div class="btn" data-key="ArrowRight">→</div>
+      <div class="btn" data-key="ArrowLeft">←</div> <div></div> <div class="btn" data-key="ArrowRight">→</div>
       <div></div>          <div class="btn" data-key="ArrowDown">↓</div>    <div></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <div class="btn wide ghost" title="Action (reserved)">Action</div>
     </div>
   </div>
 </div>
 
 <script>
 (() => {
-  // =======================
-  // Basic isometric engine
-  // =======================
+  // ===== Canvas & HUD =====
   const cvs = document.getElementById('game');
   const ctx = cvs.getContext('2d');
   const dbg = document.getElementById('debug');
 
-  // World/grid
-  const TW = 64, TH = 32;                // tile width/height (screen diamonds)
-  const MAP_W = 28, MAP_H = 28;          // grid size
-  // Build a simple cubicle maze: 0=floor, 1=wall
-  const map = Array.from({length:MAP_H}, (_,y) =>
-    Array.from({length:MAP_W}, (_,x) => 0)
-  );
+  // ===== Iso grid =====
+  const TW = 64, TH = 32;          // on-screen diamond (2:1)
+  const GW = 30, GH = 24;          // grid tiles
+  const map = Array.from({length:GH},()=>Array(GW).fill(0)); // 0=floor, 1=wall
 
-  // Carve some hallways & walls
+  // Simple readable maze-ish cubicles
   function addRectWall(x0,y0,x1,y1){
-    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
       if(x===x0||x===x1||y===y0||y===y1) map[y][x]=1;
     }
   }
-  // Outer frame pockets
-  addRectWall(3,3,10,9);
-  addRectWall(12,4,24,9);
-  addRectWall(4,12,11,20);
-  addRectWall(14,12,24,24);
-  // Corridors
-  for(let x=0;x<MAP_W;x++){ if(x%3===0) map[15][x]=1; }
-  for(let y=0;y<MAP_H;y++){ if(y%4===0) map[y][8]=1; }
-  // Door openings
-  map[15][9]=0;
-  map[4][8]=0;
-  map[12][8]=0;
+  // Blocks & corridors
+  addRectWall(3,3,10,8);
+  addRectWall(14,4,24,9);
+  addRectWall(4,12,11,19);
+  addRectWall(16,12,27,21);
+  for(let x=0;x<GW;x++){ if(x%3===0) map[14][x]=1; }
+  for(let y=0;y<GH;y++){ if(y%4===0) map[y][8]=1; }
+  map[14][9]=0; map[4][8]=0; map[12][8]=0; // openings
 
-  // Simple helpers
-  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const worldToScreen = (x,y) => {
-    return {
-      x: (x - y) * (TW/2),
-      y: (x + y) * (TH/2)
-    };
-  };
-  const inBounds=(gx,gy)=> gx>=0&&gy>=0&&gx<MAP_W&&gy<MAP_H;
+  // ===== Helpers =====
+  const inBounds=(gx,gy)=> gx>=0&&gy>=0&&gx<GW&&gy<GH;
+  const worldToScreen = (x,y) => ({ x:(x - y)*(TW/2), y:(x + y)*(TH/2) });
 
-  // Camera
-  const cam = {x:0,y:0, zoom:1};
+  // Camera follows player center
+  const cam = {x:0,y:0};
   function centerOn(px,py){
     const s = worldToScreen(px,py);
     cam.x = s.x - cvs.width/2 + TW/2;
     cam.y = s.y - cvs.height/2 + TH/2;
   }
 
-  // Entities
-  const player = {
-    x: 6.5, y: 22.5, spd: 4.5/60, w: .8, h: .8,
-    color: getComputedStyle(document.documentElement).getPropertyValue('--player').trim()
-  };
+  // ===== Player =====
+  const player = { x: 6.5, y: 20.5, spd: 4.5/60, w:.85, h:.85 };
 
-  // Two patrolling coworkers
-  function makePatroller(path){
-    return {
-      x: path[0].x+0.5, y:path[0].y+0.5, spd: 3.5/60, w:.9,h:.9,
-      color: getComputedStyle(document.documentElement).getPropertyValue('--enemy').trim(),
-      path: path, i: 1
-    }
-  }
-  const enemies = [
-    makePatroller([{x:18,y:6},{x:22,y:6},{x:22,y:10},{x:18,y:10}]),
-    makePatroller([{x:5,y:14},{x:10,y:14},{x:10,y:19},{x:5,y:19}]),
-  ];
+  // ===== Input =====
+  const keys = {ArrowUp:false,ArrowDown:false,ArrowLeft:false,ArrowRight:false,KeyW:false,KeyA:false,KeyS:false,KeyD:false};
+  addEventListener('keydown',e=>{ if(keys.hasOwnProperty(e.code)){ keys[e.code]=true; e.preventDefault(); }});
+  addEventListener('keyup',  e=>{ if(keys.hasOwnProperty(e.code)){ keys[e.code]=false; e.preventDefault(); }});
+  // Touch dpad
+  document.querySelectorAll('#dpad .btn').forEach(b=>{
+    const code=b.dataset.key;
+    const on=e=>{e.preventDefault(); keys[code]=true;};
+    const off=e=>{e.preventDefault(); keys[code]=false;};
+    b.addEventListener('touchstart',on,{passive:false});
+    b.addEventListener('touchend',off,{passive:false});
+    b.addEventListener('touchcancel',off,{passive:false});
+    b.addEventListener('mousedown',on);
+    b.addEventListener('mouseup',off);
+    b.addEventListener('mouseleave',off);
+  });
 
-  // Movement & collision (grid bump)
+  // ===== Collision =====
   function tryMove(obj, dx, dy){
     let nx = obj.x + dx, ny = obj.y + dy;
-    // 4-corner collision against walls
-    const halfW = obj.w/2*0.9, halfH = obj.h/2*0.9;
+    const hw=obj.w/2*0.9, hh=obj.h/2*0.9;
     const corners = [
-      {x:nx-halfW, y:ny-halfH},
-      {x:nx+halfW, y:ny-halfH},
-      {x:nx-halfW, y:ny+halfH},
-      {x:nx+halfW, y:ny+halfH},
+      {x:nx-hw, y:ny-hh}, {x:nx+hw, y:ny-hh},
+      {x:nx-hw, y:ny+hh}, {x:nx+hw, y:ny+hh},
     ];
     let blocked=false;
     for(const c of corners){
@@ -167,102 +142,58 @@
     if(!blocked){ obj.x=nx; obj.y=ny; }
   }
 
-  // Input (keyboard + touch)
-  const keys = {ArrowUp:false,ArrowDown:false,ArrowLeft:false,ArrowRight:false,KeyW:false,KeyA:false,KeyS:false,KeyD:false};
-  addEventListener('keydown',e=>{ if(keys.hasOwnProperty(e.code)) { keys[e.code]=true; e.preventDefault(); }});
-  addEventListener('keyup',e=>{ if(keys.hasOwnProperty(e.code)) { keys[e.code]=false; e.preventDefault(); }});
-  // Touch d-pad
-  const dpad = document.getElementById('dpad');
-  const press = (code,down)=>{ keys[code]=down; };
-  const btns = Array.from(dpad.querySelectorAll('.btn'));
-  const activeTouches = new Map();
-  btns.forEach(b=>{
-    const code = b.dataset.key;
-    const down = (e)=>{ e.preventDefault(); press(code,true); b.classList.add('active'); };
-    const up   = (e)=>{ e.preventDefault(); press(code,false); b.classList.remove('active');};
-    b.addEventListener('touchstart',down,{passive:false});
-    b.addEventListener('touchend',up,{passive:false});
-    b.addEventListener('touchcancel',up,{passive:false});
-    b.addEventListener('pointerdown',down);
-    b.addEventListener('pointerup',up);
-    b.addEventListener('pointerleave',up);
-  });
-
-  // Drawing
-  function drawIsoTile(gx,gy,fill){
+  // ===== Render =====
+  function drawTile(gx,gy,kind){
     const s = worldToScreen(gx,gy);
     const x = s.x - cam.x, y = s.y - cam.y;
+    // floor diamond
     ctx.beginPath();
     ctx.moveTo(x,           y + TH/2);
     ctx.lineTo(x + TW/2,    y);
     ctx.lineTo(x + TW,      y + TH/2);
     ctx.lineTo(x + TW/2,    y + TH);
     ctx.closePath();
-    ctx.fillStyle = fill;
+    ctx.fillStyle = ((gx+gy)&1)? getVar('--tileA') : getVar('--tileB');
     ctx.fill();
-  }
-  function drawWorld(){
-    // Floor checker
-    for(let y=0;y<MAP_H;y++){
-      for(let x=0;x<MAP_W;x++){
-        const fill = ((x+y)&1) ? '#0f1b2f' : '#0c172b';
-        drawIsoTile(x,y,fill);
-      }
-    }
-    // Walls (simple caps)
-    for(let y=0;y<MAP_H;y++){
-      for(let x=0;x<MAP_W;x++){
-        if(map[y][x]!==1) continue;
-        // wall cap: small light rhombus
-        const s = worldToScreen(x,y);
-        const px = s.x - cam.x + TW/2, py = s.y - cam.y + TH/2;
-        ctx.fillStyle = '#e4ecff';
-        ctx.beginPath();
-        ctx.moveTo(px-18, py);
-        ctx.lineTo(px, py-10);
-        ctx.lineTo(px+18, py);
-        ctx.lineTo(px, py+10);
-        ctx.closePath();
-        ctx.fill();
-      }
+    // wall cap
+    if(kind===1){
+      ctx.fillStyle = getVar('--wall');
+      ctx.beginPath();
+      ctx.moveTo(x+TW/2-18, y+TH/2);
+      ctx.lineTo(x+TW/2,    y+TH/2-10);
+      ctx.lineTo(x+TW/2+18, y+TH/2);
+      ctx.lineTo(x+TW/2,    y+TH/2+10);
+      ctx.closePath();
+      ctx.fill();
     }
   }
-  function drawEntity(e, color, hat=false){
-    const s = worldToScreen(e.x, e.y);
-    const x = s.x - cam.x, y = s.y - cam.y;
+  function drawPlayer(){
+    const s = worldToScreen(player.x, player.y);
+    const x = s.x - cam.x + TW/2, y = s.y - cam.y + TH/2;
     // shadow
     ctx.fillStyle = 'rgba(0,0,0,.35)';
-    ctx.beginPath();
-    ctx.ellipse(x+TW/2, y+TH/2+6, 14, 8, 0, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y+6, 14, 8, 0, 0, Math.PI*2); ctx.fill();
     // body
-    ctx.fillStyle = color;
-    ctx.fillRect(x+TW/2-8, y+TH/2-20, 16, 24);
+    ctx.fillStyle = getVar('--player');
+    ctx.fillRect(x-8, y-22, 16, 24);
     // head
-    ctx.fillStyle = '#ffd7b0';
-    ctx.fillRect(x+TW/2-7, y+TH/2-30, 14, 10);
-    // tie stripe for player / enemy bar for coworkers
-    if(hat){
-      ctx.fillStyle='#ff3b3b';
-      ctx.fillRect(x+TW/2-1, y+TH/2-14, 2, 12);
-    }else{
-      ctx.fillStyle='#67ff9a';
-      ctx.fillRect(x+TW/2-8, y+TH/2-32, 16, 3);
-    }
+    ctx.fillStyle = '#ffd7b0'; ctx.fillRect(x-7, y-32, 14, 10);
+    // tie
+    ctx.fillStyle = '#ff536b'; ctx.fillRect(x-1, y-16, 2, 10);
   }
+  function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
-  // Game loop
+  // ===== Loop =====
   let last=0;
-  function step(ts){
-    const dt = Math.min(32, ts-last); last=ts;
-    // Input
-    const up   = keys.ArrowUp   || keys.KeyW;
-    const down = keys.ArrowDown || keys.KeyS;
-    const left = keys.ArrowLeft || keys.KeyA;
-    const right= keys.ArrowRight|| keys.KeyD;
+  function frame(ts){
+    const dt = Math.min(32, ts-last)||16; last=ts;
+
+    // Input (isometric directions)
+    const up   = keys.ArrowUp||keys.KeyW;
+    const down = keys.ArrowDown||keys.KeyS;
+    const left = keys.ArrowLeft||keys.KeyA;
+    const right= keys.ArrowRight||keys.KeyD;
     const spd = player.spd * dt * 60;
-    const diag = (up||down)&&(left||right) ? Math.SQRT1_2 : 1;
-    // Isometric axes: up = (dx=-1,dy=-1), right = (dx=+1,dy=-1) etc.
     let mdx=0, mdy=0;
     if(up)    { mdx+=-1; mdy+=-1; }
     if(down)  { mdx+=+1; mdy+=+1; }
@@ -270,46 +201,28 @@
     if(right) { mdx+=+1; mdy+=-1; }
     if(mdx||mdy){
       const len = Math.hypot(mdx,mdy);
-      tryMove(player, (mdx/len)*spd*diag, (mdy/len)*spd*diag);
+      tryMove(player, (mdx/len)*spd, (mdy/len)*spd);
     }
 
-    // Enemies patrol toward next waypoint
-    for(const e of enemies){
-      const t = e.path[e.i];
-      const dx = (t.x+0.5) - e.x, dy=(t.y+0.5) - e.y;
-      const d = Math.hypot(dx,dy);
-      if(d<0.05){
-        e.i = (e.i+1) % e.path.length;
-      }else{
-        tryMove(e, (dx/d)*e.spd*dt*60, (dy/d)*e.spd*dt*60);
-      }
-    }
-
-    // Camera
+    // Camera follow
     centerOn(player.x, player.y);
 
-    // Render
+    // Draw
     ctx.clearRect(0,0,cvs.width,cvs.height);
     ctx.save();
-    ctx.translate(cvs.width/2, 100); // center the diamond a bit lower
+    ctx.translate(cvs.width/2, 100);
     ctx.translate(-cvs.width/2, 0);
-
-    drawWorld();
-    // draw entities by Y for rough depth
-    const ents = [ ...enemies.map(e=>({z:e.y, draw:()=>drawEntity(e, getComputedStyle(document.documentElement).getPropertyValue('--enemy').trim(), false)})),
-                   {z:player.y, draw:()=>drawEntity(player, getComputedStyle(document.documentElement).getPropertyValue('--player').trim(), true)}]
-                 .sort((a,b)=>a.z-b.z);
-    for(const it of ents) it.draw();
-
+    for(let y=0;y<GH;y++)for(let x=0;x<GW;x++) drawTile(x,y,map[y][x]);
+    drawPlayer();
     ctx.restore();
 
-    // Debug
+    // HUD
     const fps = (1000/Math.max(1,dt)).toFixed(0);
-    dbg.textContent = `OK • fps:${fps} • pos:(${player.x.toFixed(1)},${player.y.toFixed(1)}) • enemies:${enemies.length}`;
-    requestAnimationFrame(step);
+    dbg.textContent = `OK • fps:${fps} • pos:(${player.x.toFixed(1)},${player.y.toFixed(1)})`;
+    requestAnimationFrame(frame);
   }
 
-  // Resize to device pixels for crispness
+  // Crisp rendering on any screen
   function fit(){
     const r = document.getElementById('wrap').getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio||1);
@@ -318,8 +231,7 @@
     ctx.setTransform(dpr,0,0,dpr,0,0);
   }
   addEventListener('resize', fit, {passive:true});
-  fit();
-  requestAnimationFrame(step);
+  fit(); requestAnimationFrame(frame);
 })();
 </script>
 </body>
